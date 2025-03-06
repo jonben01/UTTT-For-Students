@@ -1,37 +1,16 @@
 package dk.easv.bll.bot;
 
-import dk.easv.bll.bot.IBot;
 import dk.easv.bll.field.IField;
 import dk.easv.bll.game.GameState;
 import dk.easv.bll.game.IGameState;
 import dk.easv.bll.move.IMove;
-import dk.easv.bll.move.Move;
 
+import java.sql.Array;
 import java.util.*;
 
-public class ThirteenthReasonWhyBot implements IBot {
+public class KillMeBot implements IBot {
     final int moveTimeMs = 1000;
-    private String BOT_NAME = "My Thirteenth Reason Why";
-    private static final double EXPLORATION_CONSTANT = 1.41;
-    protected int[][] preferredMoves = {
-            {1, 1}, //Center
-            {0, 0}, {2, 2}, {0, 2}, {2, 0},  //Corners ordered across
-            {0, 1}, {2, 1}, {1, 0}, {1, 2}}; //Outer Middles ordered across
-
-    private class Node {
-        final IMove move;
-        final Node parent;
-        final List<Node> children = new ArrayList<>();
-        int visits = 0;
-        double totalReward = 0;
-        final IGameState state;
-
-        public Node(IGameState state, Node parent, IMove move) {
-            this.state = ThirteenthReasonWhyBot.this.cloneState(state);
-            this.parent = parent;
-            this.move = move;
-        }
-    }
+    private String BOT_NAME = getClass().getSimpleName();
 
     private GameSimulator createSimulator(IGameState state) {
         GameSimulator simulator = new GameSimulator(new GameState());
@@ -46,200 +25,71 @@ public class ThirteenthReasonWhyBot implements IBot {
 
     @Override
     public IMove doMove(IGameState state) {
-        List<IMove> winningMoves = getWinningMoves(state);
-        if (!winningMoves.isEmpty()) {
-            return winningMoves.get(0);
-        }
+        return calculateWinningMove(state, moveTimeMs);
+    }
+    // Plays single games until it wins and returns the first move for that. If iterations reached with no clear win, just return random valid move
+    private IMove calculateWinningMove(IGameState state, int maxTimeMs) {
+        long time = System.currentTimeMillis();
+        Random rand = new Random();
+        List<HashMap<IMove, Integer>> winningMoves = new ArrayList<>();
+        List<HashMap<IMove, Integer>> losingMoves = new ArrayList<>();
+        int count = 0;
+        while (System.currentTimeMillis() < time + maxTimeMs) { // check how much time has passed, stop if over maxTimeMs
+            GameSimulator simulator = createSimulator(state);
+            IGameState gs = simulator.getCurrentState();
+            List<IMove> moves = gs.getField().getAvailableMoves();
+            IMove randomMovePlayer = moves.get(rand.nextInt(moves.size()));
+            IMove winnerMove = randomMovePlayer;
 
-        if (state.getMoveNumber() < 10) {
-            for (int[] move : preferredMoves)
-            {
-                if(state.getField().getMacroboard()[move[0]][move[1]].equals(IField.AVAILABLE_FIELD))
-                {
-                    //find move to play
-                    for (int[] selectedMove : preferredMoves)
-                    {
-                        int x = move[0]*3 + selectedMove[0];
-                        int y = move[1]*3 + selectedMove[1];
-                        if(state.getField().getBoard()[x][y].equals(IField.EMPTY_FIELD))
-                        {
-                            return new Move(x,y);
-                        }
+            while (simulator.getGameOver() == GameOverState.Active) { // Game not ended
+                simulator.updateGame(randomMovePlayer);
+
+                // Opponent plays randomly
+                if (simulator.getGameOver() == GameOverState.Active) { // game still going
+                    moves = gs.getField().getAvailableMoves();
+                    IMove randomMoveOpponent = moves.get(rand.nextInt(moves.size()));
+                    simulator.updateGame(randomMoveOpponent);
+                }
+                if (simulator.getGameOver() == GameOverState.Active) { // game still going
+                    moves = gs.getField().getAvailableMoves();
+                    randomMovePlayer = moves.get(rand.nextInt(moves.size()));
+                }
+            }
+
+            if (simulator.getGameOver() == GameOverState.Win) {
+                //System.out.println("Found a win, :)");
+                HashMap<IMove, Integer> winningMove = new HashMap<>();
+                winningMove.put(winnerMove, gs.getMoveNumber());
+                winningMoves.add(winningMove);
+                // return winnerMove; // Hint you could maybe save multiple games and pick the best? Now it just returns at a possible victory
+            }
+
+        }
+        if (!winningMoves.isEmpty()) {
+            IMove bestMove = null;
+            int minSteps = Integer.MAX_VALUE;
+
+            // Iterate through each HashMap in the winningMoves list
+            for (HashMap<IMove, Integer> moveMap : winningMoves) {
+                // Each moveMap contains a single entry, get it
+                for (Map.Entry<IMove, Integer> entry : moveMap.entrySet()) {
+                    int steps = entry.getValue();
+                    // Check if this move has fewer steps than the current minimum
+                    if (steps < minSteps) {
+                        minSteps = steps;
+                        bestMove = entry.getKey();
                     }
                 }
             }
-        }
 
-        return mctsMove(state);
-    }
-
-    private List<IMove> getWinningMoves(IGameState state) {
-        String player = state.getMoveNumber() % 2 == 0 ? "0" : "1";
-        List<IMove> avail = state.getField().getAvailableMoves();
-        List<IMove> winningMoves = new ArrayList<>();
-        for (IMove move : avail) {
-            if (isWinningMove(state, move, player)) {
-                winningMoves.add(move);
+            if (bestMove != null) {
+                return bestMove;
             }
         }
-        return winningMoves;
-    }
 
-    private boolean isWinningMove(IGameState state, IMove move, String player){
-        String[][] board = Arrays.stream(state.getField().getBoard()).map(String[]::clone).toArray(String[][]::new);
-
-        board[move.getX()][move.getY()] = player;
-
-        int startX = move.getX()-(move.getX()%3);
-        if(board[startX][move.getY()].equals(player))
-            if (board[startX][move.getY()].equals(board[startX+1][move.getY()]) &&
-                    board[startX+1][move.getY()].equals(board[startX+2][move.getY()]))
-                return true;
-
-        int startY = move.getY()-(move.getY()%3);
-        if(board[move.getX()][startY].equals(player))
-            if (board[move.getX()][startY].equals(board[move.getX()][startY+1]) &&
-                    board[move.getX()][startY+1].equals(board[move.getX()][startY+2]))
-                return true;
-
-
-        if(board[startX][startY].equals(player))
-            if (board[startX][startY].equals(board[startX+1][startY+1]) &&
-                    board[startX+1][startY+1].equals(board[startX+2][startY+2]))
-                return true;
-
-        if(board[startX][startY+2].equals(player))
-            if (board[startX][startY+2].equals(board[startX+1][startY+1]) &&
-                    board[startX+1][startY+1].equals(board[startX+2][startY]))
-                return true;
-
-        return false;
-    }
-    private IMove mctsMove(IGameState state) {
-        Node root = new Node(state, null, null);
-        long start = System.currentTimeMillis();
-
-        while (System.currentTimeMillis() - start < moveTimeMs) {
-            Node node = select(root);
-            GameSimulator simulator = createSimulator(node.state);
-            if (simulator.getGameOver() == GameOverState.Active) {
-                expand(node);
-            }
-            double reward = simulate(node);
-            backpropagate(node, reward);
-        }
-
-        return root.children.stream()
-                .max(Comparator.comparingDouble(n -> n.visits))
-                .orElseThrow().move;
-    }
-
-    private Node select(Node node) {
-        while (!node.children.isEmpty()) {
-            Node bestChild = null;
-            double bestUct = Double.NEGATIVE_INFINITY;
-            List<Node> bestChildren = new ArrayList<>();
-
-            for (Node child : node.children) {
-                double uct = calculateUct(child);
-                //System.out.println("UCT: " + uct + " for child " + child.move);
-                if (uct > bestUct) {
-                    bestUct = uct;
-                    bestChildren.clear();
-                    bestChildren.add(child);
-                } else if (uct == bestUct) {
-                    bestChildren.add(child);
-                }
-            }
-
-            //System.out.println("Best UCT: " + bestUct + " for children " + bestChildren);
-            Random rand = new Random();
-            node = bestChildren.get(rand.nextInt(bestChildren.size()));
-        }
-        return node;
-    }
-    private IGameState cloneState(IGameState state) {
-        GameSimulator simulator = createSimulator(state);
-        return simulator.getCurrentState();
-    }
-
-    private double calculateUct(Node node) {
-        if (node.visits == 0) return Double.MAX_VALUE;
-        return (node.totalReward / node.visits)
-                + EXPLORATION_CONSTANT * Math.sqrt(Math.log(node.parent.visits) / node.visits);
-    }
-
-    private void expand(Node node) {
-        List<IMove> moves = node.state.getField().getAvailableMoves();
-        for (IMove move : moves) {
-            GameSimulator simulator = createSimulator(node.state);
-            simulator.updateGame(move);
-            node.children.add(new Node(simulator.getCurrentState(), node, move));
-        }
-    }
-
-    private double simulate(Node node) {
-        IGameState simState = cloneState(node.state);
-        Random rand = new Random();
-
-        while (true) {
-            GameSimulator simulator = createSimulator(simState);
-            if (simulator.getGameOver() != GameOverState.Active) {
-                break;
-            }
-
-            List<IMove> moves = simState.getField().getAvailableMoves();
-            if (moves.isEmpty()) {
-                return 0.5; // Tie
-            }
-
-
-            List<IMove> winningMoves = getWinningMoves(simState);
-            if (!winningMoves.isEmpty()) {
-                return 1;
-            }
-
-
-            List<IMove> blockingMoves = getWinningMovesForOpponent(simState);
-            if (!blockingMoves.isEmpty()) {
-                return 0;
-            }
-
-            IMove randomMove = moves.get(rand.nextInt(moves.size()));
-            simulator.updateGame(randomMove);
-            simState = simulator.getCurrentState();
-        }
-
-        GameSimulator simulator = createSimulator(simState);
-        if (simulator.getGameOver() == GameOverState.Win) {
-            return simulator.getCurrentState().getMoveNumber() % 2 == node.state.getMoveNumber() % 2 ? 1 : 0;
-        }
-        return 0.5;
-    }
-
-    private List<IMove> getWinningMovesForOpponent(IGameState state) {
-        String opponent = state.getMoveNumber() % 2 == 0 ? "1" : "0";
-        List<IMove> avail = state.getField().getAvailableMoves();
-        List<IMove> blockingMoves = new ArrayList<>();
-
-        for (IMove move : avail) {
-
-            String[][] board = Arrays.stream(state.getField().getBoard()).map(String[]::clone).toArray(String[][]::new);
-            board[move.getX()][move.getY()] = opponent;
-
-            if (isWinningMove(state, move, opponent)) {
-                blockingMoves.add(move);
-            }
-        }
-        return blockingMoves;
-    }
-
-    private void backpropagate(Node node, double reward) {
-        while (node != null) {
-            node.visits++;
-            node.totalReward += reward;
-            node = node.parent;
-        }
+// If no winning moves found, return a random move
+        List<IMove> moves = state.getField().getAvailableMoves();
+        return moves.get(new Random().nextInt(moves.size()));
     }
 
     /*
@@ -472,3 +322,4 @@ public class ThirteenthReasonWhyBot implements IBot {
     }
 
 }
+
