@@ -51,7 +51,7 @@ public class ThirteenthReasonWhyBot implements IBot {
             return winningMoves.get(0);
         }
 
-        if (state.getMoveNumber() < 10) {
+        if (state.getMoveNumber() < 3) {
             for (int[] move : preferredMoves)
             {
                 if(state.getField().getMacroboard()[move[0]][move[1]].equals(IField.AVAILABLE_FIELD))
@@ -151,7 +151,6 @@ public class ThirteenthReasonWhyBot implements IBot {
                     bestChildren.add(child);
                 }
             }
-
             //System.out.println("Best UCT: " + bestUct + " for children " + bestChildren);
             Random rand = new Random();
             node = bestChildren.get(rand.nextInt(bestChildren.size()));
