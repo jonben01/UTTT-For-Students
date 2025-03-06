@@ -51,12 +51,17 @@ public class ThirteenthReasonWhyBot implements IBot {
             return winningMoves.get(0);
         }
 
+        List<IMove> blockingMoves = getBlockingMoves(state);
+        if (!blockingMoves.isEmpty()) {
+            return blockingMoves.get(0);
+        }
+
         if (state.getMoveNumber() < 3) {
             for (int[] move : preferredMoves)
             {
                 if(state.getField().getMacroboard()[move[0]][move[1]].equals(IField.AVAILABLE_FIELD))
                 {
-                    //find move to play
+                    
                     for (int[] selectedMove : preferredMoves)
                     {
                         int x = move[0]*3 + selectedMove[0];
@@ -83,6 +88,18 @@ public class ThirteenthReasonWhyBot implements IBot {
             }
         }
         return winningMoves;
+    }
+
+    private List<IMove> getBlockingMoves(IGameState state) {
+        String opponent = state.getMoveNumber() % 2 == 0 ? "1" : "0";
+        List<IMove> avail = state.getField().getAvailableMoves();
+        List<IMove> blockingMoves = new ArrayList<>();
+        for (IMove move : avail) {
+            if (isWinningMove(state, move, opponent)) {
+                blockingMoves.add(move);
+            }
+        }
+        return blockingMoves;
     }
 
     private boolean isWinningMove(IGameState state, IMove move, String player){
@@ -199,7 +216,7 @@ public class ThirteenthReasonWhyBot implements IBot {
             }
 
 
-            List<IMove> blockingMoves = getWinningMovesForOpponent(simState);
+            List<IMove> blockingMoves = getBlockingMoves(simState);
             if (!blockingMoves.isEmpty()) {
                 return 0;
             }
@@ -214,23 +231,6 @@ public class ThirteenthReasonWhyBot implements IBot {
             return simulator.getCurrentState().getMoveNumber() % 2 == node.state.getMoveNumber() % 2 ? 1 : 0;
         }
         return 0.5;
-    }
-
-    private List<IMove> getWinningMovesForOpponent(IGameState state) {
-        String opponent = state.getMoveNumber() % 2 == 0 ? "1" : "0";
-        List<IMove> avail = state.getField().getAvailableMoves();
-        List<IMove> blockingMoves = new ArrayList<>();
-
-        for (IMove move : avail) {
-
-            String[][] board = Arrays.stream(state.getField().getBoard()).map(String[]::clone).toArray(String[][]::new);
-            board[move.getX()][move.getY()] = opponent;
-
-            if (isWinningMove(state, move, opponent)) {
-                blockingMoves.add(move);
-            }
-        }
-        return blockingMoves;
     }
 
     private void backpropagate(Node node, double reward) {
